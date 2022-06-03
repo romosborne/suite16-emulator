@@ -1,15 +1,18 @@
 using System.IO.Ports;
+using Microsoft.Extensions.Logging;
 
 public class Suite16 : IDisposable {
     private readonly SerialPort _sp;
     private readonly List<string> _buffer;
     private readonly State _state;
+    private readonly ILogger<Suite16> _logger;
 
-    public Suite16(string port) {
+    public Suite16(string port, ILogger<Suite16> logger) {
         //var ports = SerialPort.GetPortNames();
         //Console.WriteLine($"Ports Available: {ports.Length}");
         //foreach(var port in ports) Console.WriteLine(port);
-
+        _logger = logger;
+        _logger.LogInformation($"Attempting to open port {port}...");
         _state = new State();
 
         _buffer = new List<string>();
@@ -24,7 +27,7 @@ public class Suite16 : IDisposable {
 
         _sp.DataReceived += new SerialDataReceivedEventHandler(Blah);
         _sp.Open();
-        System.Console.WriteLine($"Opened port: {_sp.PortName}");
+        _logger.LogInformation($"Openned port {port}");
     }
 
     public void Dispose() {
@@ -34,35 +37,33 @@ public class Suite16 : IDisposable {
     private void Blah(object sender, SerialDataReceivedEventArgs e) {
         try {
             var x = _sp.ReadExisting();
-            // Console.WriteLine($"Read: {x}");
             _buffer.Add(x);
             if (x.EndsWith("\r")) {
                 var command = string.Join("", _buffer);
                 _buffer.Clear();
-                Console.WriteLine(command);
+                _logger.LogInformation($"Received: {command}");
                 ExecuteCommand(command);
-
             }
         }
         catch (IOException ex) {
-            Console.WriteLine(ex);
+            _logger.LogError($"Failed to do something: {ex.Message}");
         }
     }
 
     private void Send(string ack) {
-        //Console.WriteLine(ack);
         _sp.Write($"{ack}\r");
         Thread.Sleep(10);
     }
 
     private bool ExecuteCommand(string command) {
-        if (!command.StartsWith('`')) return false;
-        if (command.Length < 9) return false;
+        if (!command.StartsWith('`') || command.Length < 9) {
+            _logger.LogError($"Unknown command: {command}");
+            return false;
+        }
 
         var function1 = command.Substring(2, 2);
         var function2 = command.Substring(4, 2);
         var room = int.Parse(command.Substring(7, 2));
-        System.Console.WriteLine($"f1: {function1}, f2: {function2}, r:{room}");
 
         switch (command[1]) {
             case 'S':
@@ -79,6 +80,11 @@ public class Suite16 : IDisposable {
                         break;
 
                     case "IN":
+                    case "AD":
+                        if (!_state.Rooms[room - 1].On) {
+                            Send($"`AXRMOFR{room:00}");
+                            break;
+                        }
                         switch (function2) {
                             case "UP":
                                 _state.Rooms[room - 1].InputUp();
@@ -93,6 +99,7 @@ public class Suite16 : IDisposable {
                         }
                         Send($"`AXAD{_state.Rooms[room - 1].InputNumber + 1:00}R{room:00}");
                         break;
+
                     case "MT":
                         switch (function2) {
                             case "OG":
@@ -142,7 +149,36 @@ public class Suite16 : IDisposable {
                         _state.Rooms[room - 1].Treble = int.Parse(command.Substring(3, 3));
                         Send($"`AXT{_state.Rooms[room - 1].Treble:+00;-00;000}R{room:00}");
                         break;
+                    case "LD":
+                        if (function2 == "ON") _state.Rooms[room - 1].LoudnessCountour = true;
+                        else _state.Rooms[room - 1].LoudnessCountour = false;
+                        Send($"`AXLD{(_state.Rooms[room - 1].LoudnessCountour ? "ON" : "OF")}R{room:00}");
+                        break;
+                    case "SE":
+                        if (function2 == "ON") _state.Rooms[room - 1].StereoEnhance = true;
+                        else _state.Rooms[room - 1].StereoEnhance = false;
+                        Send($"`AXSE{(_state.Rooms[room - 1].StereoEnhance ? "ON" : "OF")}R{room:00}");
+                        break;
+                    case "ST":
+                        _state.Rooms[room - 1].Phonic = Phonic.Stereo;
+                        Send($"`AXSTROR{room:00}");
+                        break;
+                    case "MI":
+                        switch (function2) {
+                            case "NL":
+                                _state.Rooms[room - 1].Phonic = Phonic.MonoLeft;
+                                break;
+                            case "NR":
+                                _state.Rooms[room - 1].Phonic = Phonic.MonoLeft;
+                                break;
+                            default:
+                                break;
+                        }
+                        Send($"`AXMI{function2}R{room:00}");
+                        break;
                     default:
+                        _logger.LogError($"Unknown command: {command}");
+
                         break;
                 }
                 break;
@@ -189,10 +225,14 @@ public class Suite16 : IDisposable {
                         Send($"`AXV{_state.Rooms[room - 1].Volume:000}R{room:00}");
                         break;
                     default:
+                        _logger.LogError($"Unknown command: {command}");
+
                         break;
                 }
                 break;
             default:
+                _logger.LogError($"Unknown command: {command}");
+
                 break;
         }
         return true;
@@ -208,9 +248,19 @@ public class Suite16 : IDisposable {
         Send($"`AXVPOFR{i:00}"); // Volume preset
         Send($"`AXMV{r.MaxVol}R{i:00}");
         Send($"`AXMT{(r.Mute ? "ON" : "OF")}R{i:00}");  // Mute
-        Send($"`AXSTROR{i:00}"); // Stereo/monol/monor
-        Send($"`AXLDOFR{i:00}"); // Loudness contour on/off
-        Send($"`AXSEOFR{i:00}"); // Stereo enhance on/off
+        switch (r.Phonic) { // Stereo/monol/monor
+            case Phonic.Stereo:
+                Send($"`AXSTROR{i:00}");
+                break;
+            case Phonic.MonoLeft:
+                Send($"`AXMINLR{i:00}");
+                break;
+            case Phonic.MonoRight:
+                Send($"`AXMINRR{i:00}");
+                break;
+        }
+        Send($"`AXLD{(r.LoudnessCountour ? "ON" : "OF")}R{i:00}"); // Loudness contour on/off
+        Send($"`AXSE{(r.StereoEnhance ? "ON" : "OF")}R{i:00}"); // Stereo enhance on/off
         Send($"`AV1000R{i:00}"); // Volume preset 1
         Send($"`AV2000R{i:00}"); // Volume preset 2
         Send($"`AV3000R{i:00}"); // Volume preset 3
