@@ -81,10 +81,7 @@ public class Suite16 : IDisposable {
 
                     case "IN":
                     case "AD":
-                        if (!_state.Rooms[room - 1].On) {
-                            Send($"`AXRMOFR{room:00}");
-                            break;
-                        }
+                        _state.Rooms[room - 1].On = true;
                         switch (function2) {
                             case "UP":
                                 _state.Rooms[room - 1].InputUp();
@@ -240,8 +237,8 @@ public class Suite16 : IDisposable {
 
     private void SendRoomUpdate(Room r, int i) {
         Send($"`AXV{r.Volume:000}R{i:00}");
-        Send($"`AXB{r.Bass:000}R{i:00}");
-        Send($"`AXT{r.Treble:000}R{i:00}");
+        Send($"`AXB{r.Bass:+00;-00;000}R{i:00}");
+        Send($"`AXT{r.Treble:+00;-00;000}R{i:00}");
         Send($"`AXB{r.Balance:000}R{i:00}");
         if (!_state.Rooms[i - 1].On) Send($"`AXRMOFR{i:00}");
         else Send($"`AXAD{_state.Rooms[i - 1].InputNumber + 1:00}R{i:00}");
