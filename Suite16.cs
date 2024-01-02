@@ -1,15 +1,13 @@
 using System.IO.Ports;
 using Microsoft.Extensions.Logging;
 
-public class Suite16 : IDisposable
-{
+public class Suite16 : IDisposable {
   private readonly SerialPort _sp;
   private readonly List<string> _buffer;
   private readonly State _state;
   private readonly ILogger<Suite16> _logger;
 
-  public Suite16(string port, ILogger<Suite16> logger)
-  {
+  public Suite16(string port, ILogger<Suite16> logger) {
     //var ports = SerialPort.GetPortNames();
     //Console.WriteLine($"Ports Available: {ports.Length}");
     //foreach(var port in ports) Console.WriteLine(port);
@@ -19,8 +17,7 @@ public class Suite16 : IDisposable
 
     _buffer = new List<string>();
 
-    _sp = new SerialPort
-    {
+    _sp = new SerialPort {
       PortName = port,
       BaudRate = 19200,
       DataBits = 8,
@@ -30,44 +27,37 @@ public class Suite16 : IDisposable
 
     _sp.DataReceived += new SerialDataReceivedEventHandler(Blah);
     _sp.Open();
-    _logger.LogInformation($"Openned port {port}");
+    _logger.LogInformation($"Opened port {port}");
   }
 
-  public void Dispose()
-  {
+  public void Dispose() {
     _sp.Close();
   }
 
-  private void Blah(object sender, SerialDataReceivedEventArgs e)
-  {
-    try
-    {
+  private void Blah(object sender, SerialDataReceivedEventArgs e) {
+    try {
       var x = _sp.ReadExisting();
       _buffer.Add(x);
-      if (x.EndsWith("\r"))
-      {
+      if (x.EndsWith("\r")) {
         var command = string.Join("", _buffer);
         _buffer.Clear();
         _logger.LogInformation($"Received: {command}");
         ExecuteCommand(command);
       }
     }
-    catch (IOException ex)
-    {
+    catch (IOException ex) {
       _logger.LogError($"Failed to do something: {ex.Message}");
     }
   }
 
-  private void Send(string ack)
-  {
+  private void Send(string ack) {
+    _logger.LogTrace($"Sending {ack}");
     _sp.Write($"{ack}\r");
     Thread.Sleep(10);
   }
 
-  private bool ExecuteCommand(string command)
-  {
-    if (!command.StartsWith('`') || command.Length < 9)
-    {
+  private bool ExecuteCommand(string command) {
+    if (!command.StartsWith('`') || command.Length < 9) {
       _logger.LogError($"Unknown command: {command}");
       return false;
     }
@@ -76,17 +66,13 @@ public class Suite16 : IDisposable
     var function2 = command.Substring(4, 2);
     var room = int.Parse(command.Substring(7, 2));
 
-    switch (command[1])
-    {
+    switch (command[1]) {
       case 'S':
-        switch (function1)
-        {
+        switch (function1) {
           case "AL":
-            switch (function2)
-            {
+            switch (function2) {
               case "OF":
-                foreach (var r in _state.Rooms)
-                {
+                foreach (var r in _state.Rooms) {
                   r.On = false;
                 }
                 Send("`AXALOFG00");
@@ -97,8 +83,7 @@ public class Suite16 : IDisposable
           case "IN":
           case "AD":
             _state.Rooms[room - 1].On = true;
-            switch (function2)
-            {
+            switch (function2) {
               case "UP":
                 _state.Rooms[room - 1].InputUp();
                 break;
@@ -114,8 +99,7 @@ public class Suite16 : IDisposable
             break;
 
           case "MT":
-            switch (function2)
-            {
+            switch (function2) {
               case "OG":
                 _state.Rooms[room - 1].Mute = !_state.Rooms[room - 1].Mute;
                 break;
@@ -130,15 +114,13 @@ public class Suite16 : IDisposable
             Send($"`AXMT{(_state.Rooms[room - 1].Mute ? "ON" : "OF")}R{room:00}");
             break;
           case "RM":
-            if (function2 == "OF")
-            {
+            if (function2 == "OF") {
               _state.Rooms[room - 1].On = false;
               Send($"`AXRMOFR{room:00}");
             }
             break;
           case "VL":
-            switch (function2)
-            {
+            switch (function2) {
               case "UP":
                 _state.Rooms[room - 1].VolumeUp();
                 break;
@@ -180,8 +162,7 @@ public class Suite16 : IDisposable
             Send($"`AXSTROR{room:00}");
             break;
           case "MI":
-            switch (function2)
-            {
+            switch (function2) {
               case "NL":
                 _state.Rooms[room - 1].Phonic = Phonic.MonoLeft;
                 break;
@@ -200,29 +181,23 @@ public class Suite16 : IDisposable
         }
         break;
       case 'G':
-        switch (function1)
-        {
+        switch (function1) {
           case "AL":
-            switch (function2)
-            {
+            switch (function2) {
               case "OF":
-                if (_state.Rooms.All(r => !r.On))
-                {
+                if (_state.Rooms.All(r => !r.On)) {
                   Send("`AXALOFG00");
                 }
-                else
-                {
+                else {
                   Send("`AXALONG00");
                 }
                 break;
               case "RM":
                 Send($"`AXPAOFG00");
-                for (int i = 0; i < 16; i++)
-                {
+                for (int i = 0; i < 16; i++) {
                   Send($"`AXIT{i:00}G00");
                 }
-                for (int i = 0; i < 16; i++)
-                {
+                for (int i = 0; i < 16; i++) {
                   SendRoomUpdate(_state.Rooms[i], i + 1);
                 }
                 // potential test here
@@ -240,8 +215,7 @@ public class Suite16 : IDisposable
             else Send($"`AXMT{(_state.Rooms[room - 1].Mute ? "ON" : "OF")}R{room:00}");
             break;
           case "RM":
-            if (function2 == "OF")
-            {
+            if (function2 == "OF") {
               if (!_state.Rooms[room - 1].On) Send($"`AXRMOFR{room:00}");
               else Send($"`AXAD{_state.Rooms[room - 1].InputNumber + 1:00}R{room:00}");
             }
@@ -264,8 +238,7 @@ public class Suite16 : IDisposable
     return true;
   }
 
-  private void SendRoomUpdate(Room r, int i)
-  {
+  private void SendRoomUpdate(Room r, int i) {
     Send($"`AXV{r.Volume:000}R{i:00}");
     Send($"`AXB{r.Bass:+00;-00;000}R{i:00}");
     Send($"`AXT{r.Treble:+00;-00;000}R{i:00}");
@@ -275,8 +248,7 @@ public class Suite16 : IDisposable
     Send($"`AXVPOFR{i:00}"); // Volume preset
     Send($"`AXMV{r.MaxVol}R{i:00}");
     Send($"`AXMT{(r.Mute ? "ON" : "OF")}R{i:00}");  // Mute
-    switch (r.Phonic)
-    { // Stereo/monol/monor
+    switch (r.Phonic) { // Stereo/monol/monor
       case Phonic.Stereo:
         Send($"`AXSTROR{i:00}");
         break;
@@ -295,8 +267,7 @@ public class Suite16 : IDisposable
     Send($"`AV4000R{i:00}"); // Volume preset 4
     Send($"`A1B000R{i:00}"); // Balance preset 1
     Send($"`A2B000R{i:00}"); // Balance preset 2
-    for (int p = 1; i < 5; i++)
-    {
+    for (int p = 1; i < 5; i++) {
       Send($"`AB{p}000R{i:00}"); // Tone preset x bass
       Send($"`AT{p}000R{i:00}"); // Tone preset x treble
       Send($"`ALD{p}OFR{i:00}"); // Tone preset x loudness
@@ -307,8 +278,7 @@ public class Suite16 : IDisposable
     Send($"`AXPTC1R{i:00}"); // Party enable 3
     Send($"`AXPTC1R{i:00}"); // Party enable 4
     Send($"`AXPV00R{i:00}"); // Page volume preset
-    for (int page = 1; page < 9; page++)
-    {
+    for (int page = 1; page < 9; page++) {
       Send($"`AXPGC{page}R{i:00}"); // Page enable (Set/Clear)
     }
   }
