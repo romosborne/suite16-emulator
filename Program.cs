@@ -7,7 +7,10 @@ class Program {
             b.AddFilter("Microsoft", LogLevel.Warning)
             .AddFilter("System", LogLevel.Warning)
             .AddFilter("Program", LogLevel.Debug)
-            .AddConsole();
+            .AddSimpleConsole(o => {
+                o.SingleLine = true;
+                o.IncludeScopes = false;
+            });
         });
 
         var logger = loggerFactory.CreateLogger<Program>();
